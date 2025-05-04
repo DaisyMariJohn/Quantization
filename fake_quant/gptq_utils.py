@@ -6,6 +6,7 @@ import torch.nn as nn
 import utils
 import quant_utils
 import logging
+from skew_utils import analyze_skew
 
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
@@ -249,8 +250,6 @@ def gptq_fwrd(model, dataloader, dev, args):
     utils.cleanup_memory(verbos=True)
     logging.info('-----GPTQ Quantization Done-----\n')
     return quantizers
-
-
 
        
 @torch.no_grad()
