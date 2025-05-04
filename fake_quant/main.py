@@ -9,6 +9,8 @@ import gptq_utils
 import eval_utils
 import hadamard_utils
 
+from skew_utils import analyze_skew
+
 def main():
     args = utils.parser_gen()
     if args.wandb:
