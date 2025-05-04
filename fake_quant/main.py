@@ -29,6 +29,8 @@ def main():
             
         quant_utils.add_actquant(model) #Add Activation Wrapper to the model
         qlayers = quant_utils.find_qlayers(model)
+
+
         for name in qlayers:
             if 'down_proj' in name:
                 had_K, K = hadamard_utils.get_hadK(model.config.intermediate_size)
@@ -46,35 +48,58 @@ def main():
     else:
         quant_utils.add_actquant(model) #Add Activation Wrapper to the model as the rest of the code assumes it is present
         
-                
-    if args.w_bits < 16:
-        save_dict = {}
-        if args.load_qmodel_path: # Load Quantized Rotated Model
-            assert args.rotate, "Model should be rotated to load a quantized model!"
-            assert not args.save_qmodel_path, "Cannot save a quantized model if it is already loaded!"
-            print("Load quantized model from ", args.load_qmodel_path)
-            save_dict = torch.load(args.load_qmodel_path)
-            model.load_state_dict(save_dict["model"])
+                # WEIGHT QUANTIZATION HAPPENS HERE - ONLY KEEP TRAIN LOADER 
+    # if args.w_bits < 16:
+    #     save_dict = {}
+    #     if args.load_qmodel_path: # Load Quantized Rotated Model
+    #         assert args.rotate, "Model should be rotated to load a quantized model!"
+    #         assert not args.save_qmodel_path, "Cannot save a quantized model if it is already loaded!"
+    #         print("Load quantized model from ", args.load_qmodel_path)
+    #         save_dict = torch.load(args.load_qmodel_path)
+    #         model.load_state_dict(save_dict["model"])
             
-        elif not args.w_rtn: # GPTQ Weight Quantization
-            assert "llama" in args.model, "Only llama is supported for GPTQ!"
+    #     elif not args.w_rtn: # GPTQ Weight Quantization
+    #         assert "llama" in args.model, "Only llama is supported for GPTQ!"
             
-            trainloader = data_utils.get_loaders(
-                args.cal_dataset, nsamples=args.nsamples,
-                seed=args.seed, model=args.model,
-                seqlen=model.seqlen, eval_mode=False
-            )
-            quantizers = gptq_utils.gptq_fwrd(model, trainloader, utils.DEV, args)
-            save_dict["w_quantizers"] = quantizers
-        else: # RTN Weight Quantization
-            quantizers = gptq_utils.rtn_fwrd(model, utils.DEV, args)
-            save_dict["w_quantizers"] = quantizers
+    #         trainloader = data_utils.get_loaders(
+    #             args.cal_dataset, nsamples=args.nsamples,
+    #             seed=args.seed, model=args.model,
+    #             seqlen=model.seqlen, eval_mode=False
+    #         )
+    #         quantizers = gptq_utils.gptq_fwrd(model, trainloader, utils.DEV, args)
+    #         save_dict["w_quantizers"] = quantizers
+    #     else: # RTN Weight Quantization
+    #         quantizers = gptq_utils.rtn_fwrd(model, utils.DEV, args)
+    #         save_dict["w_quantizers"] = quantizers
             
-        if args.save_qmodel_path:
-            save_dict["model"] = model.state_dict()
-            torch.save(save_dict, args.save_qmodel_path)
+    #     if args.save_qmodel_path:
+    #         save_dict["model"] = model.state_dict()
+    #         torch.save(save_dict, args.save_qmodel_path)
 
 
+
+
+    #REPEATED TRAIN LOADER FOR TESTING- I PUT THE SKEW ANALYSIS CODE HERE: 
+
+    trainloader = data_utils.get_loaders(
+        args.cal_dataset, nsamples=args.nsamples,
+        seed=args.seed, model=args.model,
+        seqlen=model.seqlen, eval_mode=False
+    )
+
+            # === RUN SKEW ANALYSIS ===
+    # Target only certain layers — you can adjust this list
+    target_layers = ["down_proj", "o_proj", "v_proj"]
+    skew_stats = analyze_skew(model, trainloader, target_layer_names=target_layers, device=utils.DEV)
+
+    # === LOG THE RESULTS OR ACT ON THEM ===
+    # Print results
+    for layer, stats in skew_stats.items():
+        print(f"[Skew] {layer}: skew = {stats['skew']:.4f}, mean = {stats['mean']:.4f}")
+
+
+
+            #ACTIVATION QUANTIZATION HAPPENS HERE 
     # Add Input Quantization
     if args.a_bits < 16 or args.v_bits < 16:
         qlayers = quant_utils.find_qlayers(model, layers=[quant_utils.ActQuantWrapper])
@@ -148,7 +173,6 @@ def main():
         from lm_eval.models.huggingface import HFLM
 
         
-    
     if args.distribute:
         utils.distribute_model(model)
     else:
